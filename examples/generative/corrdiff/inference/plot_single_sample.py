@@ -85,7 +85,8 @@ def get_clim(output_channels, f):
 
         vmin = min([y.min(), truth.min()])
         vmax = max([y.max(), truth.max()])
-        colorlimits[channel] = (vmin, vmax)
+        colorlimits[channel] = (truth.min(), truth.max())
+        # colorlimits[channel] = (vmin, vmax)
     return colorlimits
 
 
@@ -105,8 +106,12 @@ args = parser.parse_args()
 
 def main(file, output_dir, sample):
     """Plot single sample"""
-    os.makedirs(output_dir, exist_ok=True)
 
+    #TODO add mask path in config
+    # valid_mask = np.load("/ws_src/TCCIPERA5_2013_2022/valid_mask.npy")
+    # valid_mask = torch.from_numpy(valid_mask).cuda()
+    
+    os.makedirs(output_dir, exist_ok=True)
     f = nc.Dataset(file, "r")
 
     # for c in f.time:
@@ -145,39 +150,51 @@ def main(file, output_dir, sample):
 
             # search for input_channel
             input_channels = list(f["input"].variables)
-            if channel in input_channels:
-                x = f["input"][channel][idx]
-            else:
-                x = None
+            
+            x_title = None
+            if "temp" in channel:
+                x_title = "t2m(°C)"
+                x = f["input"]["temperature_2m"][idx] - 273.15 # K -> C
+            elif "rainfall" == channel:
+                x_title = "tcwv"
+                x = f["input"][x_title][idx]
+
+            # if channel in input_channels:
+            #     x = f["input"][channel][idx]
+            # else:
+            #     x = None
 
             vmin, vmax = colorlimits[channel]
 
             def plot_panel(ax, data, **kwargs):
-                if channel == "maximum_radar_reflectivity":
-                    return ax.pcolormesh(
-                        f["lon"], f["lat"], data, cmap="magma", vmin=0, vmax=vmax
-                    )
-                if channel == "temperature_2m":
-                    return ax.pcolormesh(
+                return ax.pcolormesh(
                         f["lon"], f["lat"], data, cmap="magma", vmin=vmin, vmax=vmax
                     )
-                else:
-                    if vmin < 0 < vmax:
-                        bound = max(abs(vmin), abs(vmax))
-                        vmin1 = -bound
-                        vmax1 = bound
-                    else:
-                        vmin1 = vmin
-                        vmax1 = vmax
-                    return ax.pcolormesh(
-                        f["lon"], f["lat"], data, cmap="RdBu_r", vmin=vmin1, vmax=vmax1
-                    )
+                # if channel == "maximum_radar_reflectivity":
+                #     return ax.pcolormesh(
+                #         f["lon"], f["lat"], data, cmap="magma", vmin=0, vmax=vmax
+                #     )
+                # if channel == "temperature_2m":
+                #     return ax.pcolormesh(
+                #         f["lon"], f["lat"], data, cmap="magma", vmin=vmin, vmax=vmax
+                #     )
+                # else:
+                #     if vmin < 0 < vmax:
+                #         bound = max(abs(vmin), abs(vmax))
+                #         vmin1 = -bound
+                #         vmax1 = bound
+                #     else:
+                #         vmin1 = vmin
+                #         vmax1 = vmax
+                #     return ax.pcolormesh(
+                #         f["lon"], f["lat"], data, cmap="RdBu_r", vmin=vmin1, vmax=vmax1
+                #     )
 
             if x is not None:
                 plot_panel(row[0], x)
                 pc_x = pattern_correlation(x, truth)
                 label_x = pc_x
-                row[0].set_title(f"Input, Pattern correlation: {label_x:.2f}")
+                row[0].set_title(f"Input: {x_title}, Pattern correlation: {label_x:.2f}")
 
             im = plot_panel(row[1], y)
             plot_panel(row[2], truth)
@@ -204,4 +221,4 @@ def main(file, output_dir, sample):
 
 
 if __name__ == "__main__":
-    main()
+    main(**vars(args))

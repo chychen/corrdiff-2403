@@ -1,0 +1,54 @@
+# SPDX-FileCopyrightText: Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES.
+# SPDX-FileCopyrightText: All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# mpirun --allow-run-as-root -np 8 python train.py --config-name=config_train_regression.yaml hydra.job.name=reg_4gpu_lr2e-4
+
+hydra:
+  job:
+    chdir: true
+    name: regression_job
+  run:
+    dir: ./outputs/${hydra:job.name}
+
+defaults:
+  - config_train_base
+
+batch_size_gpu: 4
+  # Limit batch size per GPU
+duration: 1
+  # Training duration
+lr: 0.0002
+  # Learning rate
+lr_rampup_kimg: 10
+  # Learning rate ramp-up duration.
+ema: 50.
+  # EMA half-life, ema_halflife_kimg = int(ema * 1000), ema_halflife_nimg = ema_halflife_kimg * 1000
+  # regression doesn't really need ema, so set a very high value here.
+dump: 50
+  # How often to dump state
+validation_dump: 25
+  # how often to record the validation loss
+
+## Main options
+outdir: "./output_regression"   
+  # Where to save the results
+arch: ddpmpp-cwb-v0-regression
+  # Network architecture [ddpmpp, ddpmpp-cwb-v2, ncsnpp, adm, ddpmpp-cwb-v0-regression]
+precond: unetregression
+  # Preconditioning & loss function [vp, ve, edm, unetregression, resloss]
+task: regression
+  # Which model to train [regression, diffusion]
+

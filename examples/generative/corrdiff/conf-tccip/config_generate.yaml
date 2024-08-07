@@ -1,0 +1,134 @@
+# SPDX-FileCopyrightText: Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES.
+# SPDX-FileCopyrightText: All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# [generate regression only]
+# python generate.py --config-path=conf-tccip regression_only=true reg_ckpt_filename=./outputs/reg_8gpu/output_regression/training-state-regression-000666.mdlus
+# cd inference; python plot_single_sample.py ../image_outdir_0.nc reg_samples_666k
+
+# [generate]
+# python generate.py --config-path=conf-tccip regression_only=true reg_ckpt_filename=./outputs/reg_4gpu_lr2e-4/output_regression/training-state-regression-001000.mdlus res_ckpt_filename=./outputs/dif_4gpu/output_diffusion/training-state-diffusion-001639.mdlus
+# cd inference; python plot_single_sample.py ../image_outdir_0.nc dif_samples_1639k
+
+hydra:
+  job:
+    chdir: False
+
+
+## Main options
+res_ckpt_filename: "./checkpoints/diffusion.mdlus"   
+  # Checkpoint filename for the generative model  
+reg_ckpt_filename: "./checkpoints/regression.mdlus"
+  # Checkpoint filename for the mean predictor model
+image_outdir: "image_outdir"
+  # Where to save the output images
+seeds: "0-3"
+  # Random seeds used for generation
+class_idx: null  
+  # Class label. Null is random
+num_steps: 8
+  # Number of sampling steps
+sample_res: "full"
+  # Sampling resolution
+regression_only: false
+  # regression only inference
+diffusion_only: false
+  # diffusion only inference
+sampling_method: deterministic
+  # Sampling method ["stochastic", "deterministic"]
+seed_batch_size: 4
+  # batch size across the seed dimension
+force_fp16: true
+  # Whether to force fp16 precision for the model. If false, it'll use the precision
+  # specified upon training.
+num_writer_workers: 1
+  # number of workers to use for writing file
+  # To support multiple workers a threadsafe version of the netCDF library must be used
+use_torch_compile: True
+  # whether to use torch.compile on the diffusion model
+  # this will make the first time stamp generation very slow due to compilation overheads
+  # but will significantly speed up subsequent inference runs
+
+## Data options
+patch_shape_x: 384
+patch_shape_y: 384
+  # Patch size. Patch-based sampling will be utilized if these dimensions differ from 
+  # img_shape_x and img_shape_y
+overlap_pixels: 0 
+  # Number of overlapping pixels between adjacent patches
+boundary_pixels: 0
+  # Number of boundary pixels to be cropped out. 2 is recommanded to address the boundary
+  # artifact.
+hr_mean_conditioning: false
+  # High-res mean (regression's output) as additional condition
+gridtype: "sinusoidal"
+  # can be either linear, sinusoidal, or learnable
+N_grid_channels: 4
+times:
+  # hurricane 尼莎颱風
+  # https://den1.ncdr.nat.gov.tw/1132/1188/1204/68111/73631/
+  # - 2019-08-24T11:00:00 # training
+  # - 2019-08-25T11:00:00 # training
+  # - 2019-08-26T11:00:00 # training
+  # - 2019-08-27T11:00:00 # training
+  - 2022-10-15T11:00:00
+  - 2022-10-16T11:00:00
+  - 2022-10-17T11:00:00
+  - 2022-10-18T11:00:00
+  # ???
+  # - 2022-09-12T11:00:00
+
+## Weather data options
+dataset:
+  type: TCCIP
+  train: False
+  data_path: /ws_src/TCCIPERA5_2013_2022/combined_TCCIPERA5_2013_2022.zarr
+  n_history: 0
+  in_channels: [0, 1, 2, 3, 4, 8, 12, 16] #t2m, tcwv, u10, v10 ,t(500),u(500),v(500),z(500)
+  out_channels: [0, 1, 2, 3]
+  img_shape_x: 384
+  img_shape_y: 384
+  roll: false
+  add_grid: true
+  ds_factor: 4
+  min_path: null
+  max_path: null
+  global_means_path: null
+  global_stds_path: null
+  normalization: "v1"
+
+## Deterministic sampler options
+sigma_min: null
+  # Lowest noise level
+sigma_max: null
+  # Highest noise level
+rho: 7
+  # Time step exponent
+solver: euler
+  # ODE solver [euler, heun]
+discretization: "edm"
+  # Time step discretization [vp, ve, iddpm, edm]
+schedule: "linear"
+  # noise schedule sigma(t) [vp, ve, linear]
+scaling: null
+  # Signal scaling s(t) [vp, none]
+S_churn: 0
+  # Stochasticity strength
+S_min: 0
+  # Stochasticity min noise level
+S_max: .inf 
+  # Stochasticity max noise level
+S_noise: 1
+  # Stochasticity noise inflation

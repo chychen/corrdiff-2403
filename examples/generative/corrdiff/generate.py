@@ -30,6 +30,7 @@ import torch
 from torch.distributed import gather
 import torch._dynamo
 import tqdm
+import numpy as np
 
 
 from modulus.distributed import DistributedManager
@@ -53,7 +54,6 @@ def main(cfg: DictConfig) -> None:
     """Generate random images using the techniques described in the paper
     "Elucidating the Design Space of Diffusion-Based Generative Models".
     """
-
     # Parse options
     res_ckpt_filename = getattr(cfg, "res_ckpt_filename")
     reg_ckpt_filename = getattr(cfg, "reg_ckpt_filename")
@@ -354,7 +354,7 @@ def generate_and_save(
         generate_fn: Function for generating model predictions.
         device: Device (e.g., GPU) for computation.
         logger: Logger for logging information.
-    """
+    """    
     # Instantiate distributed manager.
     dist = DistributedManager()
     device = dist.device
@@ -375,6 +375,9 @@ def generate_and_save(
     writer_threads = []
 
     times = dataset.time()
+    #TODO add mask path in config
+    valid_mask = np.load("/ws_src/TCCIPERA5_2013_2022/valid_mask.npy")
+    valid_mask = torch.from_numpy(valid_mask).cuda()
 
     for image_tar, image_lr, index in iter(data_loader):
         time_index += 1
@@ -392,7 +395,9 @@ def generate_and_save(
         )
         image_tar = image_tar.to(device=device).to(torch.float32)
         image_out = generate_fn(image_lr)
-
+        image_tar = image_tar * valid_mask
+        image_out = image_out * valid_mask
+        
         # for validation - make 3x450x450 to an ordered sequence of 50x50 patches
         # input; 1x3x450x450 --> (1*9*9)x3x50x50
 
@@ -485,8 +490,8 @@ def generate(
                 [
                     seed_batch_size,
                     net.img_out_channels,
-                    net.img_shape_x,
-                    net.img_shape_y,
+                    net.model.img_shape_x,
+                    net.model.img_shape_y,
                 ],
                 device=device,
             ).to(memory_format=torch.channels_last)
@@ -567,7 +572,6 @@ def unet_regression(  # TODO a lot of redundancy, need to clean up
     Returns:
         torch.Tensor: Predicted output at the next time step.
     """
-
     # Adjust noise levels based on what's supported by the network.
     sigma_min = max(sigma_min, net.sigma_min)
     sigma_max = min(sigma_max, net.sigma_max)
@@ -626,15 +630,15 @@ def save_images(
     image_lr (torch.Tensor): Low resolution input data
     time_index (int): Epoch number
     t_index (int): index where times are located
-    """
+    """    
     # weather sub-plot
     image_lr2 = image_lr[0].unsqueeze(0)
     image_lr2 = image_lr2.cpu().numpy()
     image_lr2 = dataset.denormalize_input(image_lr2)
-
     image_tar2 = image_tar[0].unsqueeze(0)
     image_tar2 = image_tar2.cpu().numpy()
     image_tar2 = dataset.denormalize_output(image_tar2)
+
 
     # some runtime assertions
     if image_tar2.ndim != 4:

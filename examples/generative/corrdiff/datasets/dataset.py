@@ -21,11 +21,11 @@ import torch
 from modulus.utils.generative import InfiniteSampler
 from modulus.distributed import DistributedManager
 
-from . import base, cwb
+from . import base, cwb, tccip
 
 
 # this maps all known dataset types to the corresponding init function
-known_datasets = {"cwb": cwb.get_zarr_dataset}
+known_datasets = {"cwb": cwb.get_zarr_dataset, "TCCIP": tccip.get_zarr_dataset}
 
 
 def init_train_valid_datasets_from_config(
@@ -68,7 +68,6 @@ def init_train_valid_datasets_from_config(
         )
     else:
         valid_dataset = valid_dataset_iter = None
-
     return dataset, dataset_iter, valid_dataset, valid_dataset_iter
 
 
@@ -79,7 +78,7 @@ def init_dataset_from_config(
     seed: int = 0,
 ) -> Tuple[base.DownscalingDataset, Iterable]:
     dataset_cfg = copy.deepcopy(dataset_cfg)
-    dataset_type = dataset_cfg.pop("type", "cwb")
+    dataset_type = dataset_cfg.pop("type", "PLEASE DEFINE ONE")
     if "train_test_split" in dataset_cfg:
         # handled by init_train_valid_datasets_from_config
         del dataset_cfg["train_test_split"]

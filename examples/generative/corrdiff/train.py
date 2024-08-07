@@ -39,7 +39,7 @@ from training import training_loop
 from datasets.dataset import init_train_valid_datasets_from_config
 
 
-@hydra.main(version_base="1.2", config_path="conf", config_name="config_train_base")
+@hydra.main(version_base="1.2", config_path="conf-tccip", config_name="config_train_base")
 def main(cfg: DictConfig) -> None:
     """Train diffusion-based generative model using the techniques described in the
     paper "Elucidating the Design Space of Diffusion-Based Generative Models".
@@ -117,6 +117,8 @@ def main(cfg: DictConfig) -> None:
     c.lr_decay = getattr(cfg, "lr_decay", 0.8)
     c.N_grid_channels = getattr(cfg, "N_grid_channels")
     c.gridtype = getattr(cfg, "gridtype")
+    c.lr_rampup_kimg = getattr(cfg, "lr_rampup_kimg")
+    
     dataset_cfg = OmegaConf.to_container(cfg.dataset)
     validation_dataset_cfg = (
         OmegaConf.to_container(cfg.validation_dataset)

@@ -47,6 +47,14 @@ from modulus.utils.generative import (
 
 # ----------------------------------------------------------------------------
 
+def learning_rate_schedule(cur_nimg, batch_size, ref_lr=100e-4, ref_batches=70e3, rampup_kimg=10000):
+    lr = ref_lr
+    if ref_batches > 0:
+        lr /= np.sqrt(max(cur_nimg / (ref_batches * batch_size), 1))
+    if rampup_kimg > 0:
+        lr *= min(cur_nimg / (rampup_kimg * 1e3), 1)
+    return lr
+    
 
 def training_loop(
     dataset,
@@ -91,6 +99,9 @@ def training_loop(
     num_validation_evals=10,
 ):
     """CorrDiff training loop"""
+    #TODO add mask path in config
+    valid_mask = np.load("/ws_src/TCCIPERA5_2013_2022/valid_mask.npy")
+    valid_mask = torch.from_numpy(valid_mask).cuda()
 
     # Instantiate distributed manager.
     dist = DistributedManager()
@@ -126,9 +137,10 @@ def training_loop(
     np.random.seed((seed * dist.world_size + dist.rank) % (1 << 31))
     torch.manual_seed(np.random.randint(1 << 31))
     torch.backends.cudnn.benchmark = cudnn_benchmark
-    torch.backends.cudnn.allow_tf32 = False
-    torch.backends.cuda.matmul.allow_tf32 = False
-    torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False
+    torch.backends.cudnn.allow_tf32 = True
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = True
+    torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction = True
 
     # Select batch size per GPU.
     batch_gpu_total = batch_size_global // dist.world_size
@@ -260,40 +272,47 @@ def training_loop(
             with ddp_sync(ddp, (round_idx == num_accumulation_rounds - 1)):
                 # Fetch training data: weather
                 img_clean, img_lr, labels = next(dataset_iterator)
-
                 # Normalization: weather (normalized already in the dataset)
                 img_clean = (
                     img_clean.to(device).to(torch.float32).contiguous()
                 )  # [-4.5, +4.5]
                 img_lr = img_lr.to(device).to(torch.float32).contiguous()
                 labels = labels.to(device).contiguous()
-
                 with torch.autocast("cuda", dtype=amp_dtype, enabled=enable_amp):
+                    ####################### MODIFIED: add valid_mask #######################
+                    ####################### MODIFIED: add valid_mask #######################
+                    ####################### MODIFIED: add valid_mask #######################
+                    img_clean = img_clean * valid_mask
                     loss = loss_fn(
                         net=ddp,
                         img_clean=img_clean,
                         img_lr=img_lr,
                         labels=labels,
                         augment_pipe=augment_pipe,
-                    )
+                    ) * valid_mask
+                    ####################### MODIFIED: add valid_mask #######################
+                    ####################### MODIFIED: add valid_mask #######################
+                    ####################### MODIFIED: add valid_mask #######################
                 training_stats.report("Loss/loss", loss)
                 loss = loss.sum().mul(loss_scaling / batch_gpu_total)
                 loss_accum += loss / num_accumulation_rounds
                 loss.backward()
-
+                
         loss_sum = torch.tensor([loss_accum], device=device)
         if dist.world_size > 1:
             torch.distributed.all_reduce(loss_sum, op=torch.distributed.ReduceOp.SUM)
         average_loss = loss_sum / dist.world_size
         if dist.rank == 0:
             wb.log({"training loss": average_loss}, step=cur_nimg)
+            
 
         # Update weights.
         for g in optimizer.param_groups:
-            g["lr"] = optimizer_kwargs["lr"] * min(
-                cur_nimg / max(lr_rampup_kimg * 1000, 1e-8), 1
-            )  # TODO better handling (potential bug)
-            g["lr"] *= lr_decay ** ((cur_nimg - lr_rampup_kimg * 1000) // 5e6)
+            # g["lr"] = optimizer_kwargs["lr"] * min(
+            #     cur_nimg / max(lr_rampup_kimg * 1000, 1e-8), 1
+            # )  # TODO better handling (potential bug)
+            # g["lr"] *= lr_decay ** ((cur_nimg - lr_rampup_kimg * 1000) // 5e6)
+            g["lr"] = learning_rate_schedule(cur_nimg, batch_size_global, ref_lr=optimizer_kwargs["lr"], ref_batches=np.sqrt(cur_nimg/1000), rampup_kimg=lr_rampup_kimg)
             if dist.rank == 0:
                 wb.log({"lr": g["lr"]}, step=cur_nimg)
         for param in net.parameters():
@@ -322,13 +341,20 @@ def training_loop(
                             img_lr_valid.to(device).to(torch.float32).contiguous()
                         )
                         labels_valid = labels_valid.to(device).contiguous()
+                        ####################### MODIFIED: add valid_mask #######################
+                        ####################### MODIFIED: add valid_mask #######################
+                        ####################### MODIFIED: add valid_mask #######################
+                        img_clean_valid = img_clean_valid * valid_mask
                         loss_valid = loss_fn(
                             net=ddp,
                             img_clean=img_clean_valid,
                             img_lr=img_lr_valid,
                             labels=labels_valid,
                             augment_pipe=augment_pipe,
-                        )
+                        ) * valid_mask
+                        ####################### MODIFIED: add valid_mask #######################
+                        ####################### MODIFIED: add valid_mask #######################
+                        ####################### MODIFIED: add valid_mask #######################
                         training_stats.report("Loss/validation loss", loss_valid)
                         loss_valid = loss_valid.sum().mul(
                             loss_scaling / batch_gpu_total
